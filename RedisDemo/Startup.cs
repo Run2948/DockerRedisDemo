@@ -46,6 +46,12 @@ namespace RedisDemo
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
 
             services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(Configuration.GetConnectionString("RedisConnection")));
+            
+            services.AddDistributedRedisCache(options =>
+            {
+                options.Configuration = Configuration.GetConnectionString("RedisConnection");
+                options.InstanceName = "RedisDemoInstance:";// 最终会成为 redis key 的前缀
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

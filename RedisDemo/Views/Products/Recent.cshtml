@@ -1,0 +1,17 @@
+﻿@model StackExchange.Redis.RedisValue[]
+@*
+    For more information on enabling MVC for empty projects, visit http://go.microsoft.com/fwlink/?LinkID=397860
+*@
+
+@{
+    ViewData["Title"] = "Recent";
+}
+
+<h1>Recent</h1>
+
+<ul class="list-group">
+    @foreach (var item in Model)
+    {
+        <li class="list-group-item">@Html.Raw(item)</li>
+    }
+</ul>

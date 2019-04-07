@@ -67,9 +67,108 @@ services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(Conf
 ![](./docs/example1-1.png)
 ![](./docs/example1-2.png)
 
+#### 2.使用Redis实现产品访问量的统计
+```csharp
+// GET: Products/Details/5
+public async Task<IActionResult> Details(long? id)
+{
+    if (id == null)
+    {
+        return NotFound();
+    }
+
+    var product = await _context.Products
+        .FirstOrDefaultAsync(m => m.Id == id);
+    if (product == null)
+    {
+        return NotFound();
+    }
+
+    var key = $"products:{id}:views";
+    await _db.StringIncrementAsync(key);
+    var viewCount = await _db.StringGetAsync(key);
+    var vm = new ProductViewModel
+    {
+        Id = product.Id,
+        Name = product.Name,
+        Url = product.Url,
+        ViewCount = viewCount
+    };
+
+    // add to redis list
+    var element = $"<div><strong>产品:{product.Name}(已浏览{viewCount}次)</strong><img src='{product.Url}' alt='{product.Name}' width='50' height='50'/></div>";
+    await _db.ListLeftPushAsync(RecentViewedProducts,element);
+
+    // add to redis set
+    var username = User.Identity.Name ?? "Anonymous";
+    await _db.SetAddAsync("products:uniquevisitors",username);
+
+    // add to redis sorted set
+    //await _db.SortedSetAddAsync("products:views:leaderboard",element,(double)viewCount);
+    await _db.SortedSetIncrementAsync("products:views:leaderboard",element,1d);
+
+    return View(vm);
+}
+```
 
 
+#### 3.Redis分布式缓存的实现
+* Startup:ConfigureServices 配置
+```csharp
+public class Startup
+{
+    ...
 
+    // This method gets called by the runtime. Use this method to add services to the container.
+    public void ConfigureServices(IServiceCollection services)
+    {
+        ...
+
+        services.AddDistributedRedisCache(options =>
+        {
+            options.Configuration = Configuration.GetConnectionString("RedisConnection");
+            options.InstanceName = "RedisDemoInstance:";// 最终会成为 redis key 的前缀
+        });
+    }
+
+    ...
+}
+```
+* Controller:Redis分布式的实现
+```csharp
+public class DistributedController : Controller
+{
+    private readonly ApplicationDbContext _context;
+    private readonly IDistributedCache _cache;
+
+    public DistributedController(ApplicationDbContext context, IDistributedCache cache)
+    {
+        _context = context;
+        _cache = cache;
+    }
+
+    // GET: /Distributed/Index
+    public async Task<IActionResult> Index()
+    {
+        var key = "productList";
+
+        var val = await _cache.GetAsync(key);
+        if (val == null)
+        {
+            var obj = await _context.Products.ToListAsync();
+            var str = JsonConvert.SerializeObject(obj);
+            await _cache.SetAsync(key, Encoding.UTF8.GetBytes(str), new DistributedCacheEntryOptions().SetSlidingExpiration(TimeSpan.FromSeconds(30)));
+            return View(obj);
+        }
+        else
+        {
+            var str = Encoding.UTF8.GetString(val);
+            var obj = JsonConvert.DeserializeObject<List<Product>>(str);
+            return View(obj);
+        }
+    }
+}
+```
 
 
 
